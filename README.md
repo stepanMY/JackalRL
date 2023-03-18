@@ -1,4 +1,3 @@
 # JackalRL
 
-thats all folks
-stepa krasavchik123
+thats not all folks
