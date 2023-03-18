@@ -1,3 +1,3 @@
 # JackalRL
 
-thats not all folks
+thats all folks
