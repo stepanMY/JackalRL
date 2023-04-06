@@ -1,2 +1,2 @@
 # JackalRL
-The NLP project about text summarization
+The RL project about Jackal board game

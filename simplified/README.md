@@ -1,0 +1,1 @@
+Simplified version of Jackal for hypotheses testing
