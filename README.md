@@ -1,3 +1,2 @@
 # JackalRL
-
-thats not all folks
+The NLP project about text summarization
