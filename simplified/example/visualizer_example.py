@@ -15,7 +15,7 @@ print(currfield)
 dir_ = 'C:\\Users\\stepanmy\\PycharmProjects\\JackalRL\\images\\'
 tile_images = {0: 'unk', 1: 'sea', 2: 'ground', 3: 'gold1', 4: 'gold2', 5: 'gold3'}
 mapviz = MapVisualizer(dir_, tile_images)
-img_shown = mapviz.draw_field(field, (1000, 1400))
+img_shown = mapviz.draw_field(field, (1400, 1400))
 img_shown.show()
-img_hidden = mapviz.draw_field(currfield, (1000, 1400))
+img_hidden = mapviz.draw_field(currfield, (1400, 1400))
 img_hidden.show()

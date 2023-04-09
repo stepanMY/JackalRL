@@ -39,30 +39,32 @@ class MapGenerator:
 
     def create_fields(self, n_samples, order):
         """
-        Create n_samples fields of shape (n+2) x n
+        Create n_samples fields of shape (n+2) x (n+2)
 
         :param n_samples: int, number of fields to create
         :param order: np.array, n_samples x (n * n - 4) order in which tiles should be placed in fields
-        :return: np.array, n_samples x n x (n + 2) fields
+        :return: np.array, n_samples x (n+2) x (n + 2) fields
         """
-        fields = np.ones((n_samples, self.n, self.n+2))
-        fields[:, 1:self.n-1, 1] = order[:, :self.n-2]
-        fields[:, 1:self.n-1, self.n] = order[:, (self.n*self.n-4)-self.n+2:]
-        fields[:, :, 2:self.n] = order[:, self.n-2:(self.n*self.n-4)-self.n+2].reshape((n_samples, self.n, self.n-2))
+        fields = np.ones((n_samples, self.n+2, self.n+2))
+        fields[:, 2:self.n, 1] = order[:, :self.n-2]
+        fields[:, 2:self.n, self.n] = order[:, (self.n*self.n-4)-self.n+2:]
+        fields[:, 1:self.n+1, 2:self.n] = order[:, self.n-2:(self.n*self.n-4)-self.n+2].reshape((n_samples,
+                                                                                                 self.n,
+                                                                                                 self.n-2))
         return fields
 
     def create_currfields(self, fields):
         """
         Prepare fields for game: apply masks and add gold layer
 
-        :param fields: np.array, n_samples x n x (n + 2) fields
-        :return: np.array, n_samples x n x (n + 2) x 2 fields with masks and gold layer
+        :param fields: np.array, n_samples x (n + 2) x (n + 2) fields
+        :return: np.array, n_samples x (n + 2) x (n + 2) x 2 fields with masks and gold layer
         """
         fields_ = np.copy(fields)
-        fields_[:, 1:self.n-1, 1] = 0
-        fields_[:, 1:self.n-1, self.n] = 0
-        fields_[:, :, 2:self.n] = 0
-        goldlayer = np.zeros((fields.shape[0], self.n, self.n+2))
+        fields_[:, 2:self.n, 1] = 0
+        fields_[:, 2:self.n, self.n] = 0
+        fields_[:, 1:self.n+1, 2:self.n] = 0
+        goldlayer = np.zeros((fields.shape[0], self.n+2, self.n+2))
         fields_ = np.concatenate((fields_[:, :, :, None], goldlayer[:, :, :, None]), axis=3)
         return fields_
 
@@ -71,7 +73,7 @@ class MapGenerator:
         Generate n_samples fields
 
         :param n_samples: int, number of fields to create
-        :return: (np.array, np.array), n_samples x n x (n + 2) fields and n_samples x n x (n + 2) x 2
+        :return: (np.array, np.array), n_samples x (n + 2) x (n + 2) fields and n_samples x (n + 2) x (n + 2) x 2
         """
         order = self.create_tileorder(n_samples)
         fields = self.create_fields(n_samples, order)
