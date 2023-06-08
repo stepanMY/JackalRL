@@ -37,7 +37,7 @@ class MapGenerator:
         tile_order = np.take(self.tiles, indxs)
         return tile_order
 
-    def create_fields(self, n_samples, order):
+    def create_fullfields(self, n_samples, order):
         """
         Create n_samples fields of shape (n+2) x (n+2)
 
@@ -53,19 +53,17 @@ class MapGenerator:
                                                                                                  self.n-2))
         return fields
 
-    def create_currfields(self, fields):
+    def create_hiddenfields(self, fields):
         """
-        Prepare fields for game: apply masks and add gold layer
+        Prepare fields for game with mask application
 
         :param fields: np.array, n_samples x (n + 2) x (n + 2) fields
-        :return: np.array, n_samples x (n + 2) x (n + 2) x 2 fields with masks and gold layer
+        :return: np.array, n_samples x (n + 2) x (n + 2) fields with masks
         """
         fields_ = np.copy(fields)
         fields_[:, 2:self.n, 1] = 0
         fields_[:, 2:self.n, self.n] = 0
         fields_[:, 1:self.n+1, 2:self.n] = 0
-        goldlayer = np.zeros((fields.shape[0], self.n+2, self.n+2))
-        fields_ = np.concatenate((fields_[:, :, :, None], goldlayer[:, :, :, None]), axis=3)
         return fields_
 
     def generate(self, n_samples):
@@ -76,6 +74,6 @@ class MapGenerator:
         :return: (np.array, np.array), n_samples x (n + 2) x (n + 2) fields and n_samples x (n + 2) x (n + 2) x 2
         """
         order = self.create_tileorder(n_samples)
-        fields = self.create_fields(n_samples, order)
-        curr_fields = self.create_currfields(fields)
+        fields = self.create_fullfields(n_samples, order)
+        curr_fields = self.create_hiddenfields(fields)
         return fields, curr_fields
