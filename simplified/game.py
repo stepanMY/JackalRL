@@ -5,6 +5,22 @@ class GameError(Exception):
     pass
 
 
+def parse_action(action):
+    """
+    Translates string representation of action to game logic
+
+    :param action: string, action to parse
+    :return: id of pirate, direction, flag of gold movement
+    """
+    action_sp = action.split('_')
+    pir_id, direction = int(action_sp[0][-1]), action_sp[1]
+    if len(action_sp) == 3 and action_sp[-1] == 'g':
+        gold_flag = True
+    else:
+        gold_flag = False
+    return pir_id, direction, gold_flag
+
+
 class SimpleGame:
     """
     Class that encapsulates simplified Jackal game logic
@@ -13,7 +29,7 @@ class SimpleGame:
                  full_field,
                  masked_field,
                  tile_ids,
-                 max_turn=500):
+                 max_turn=1000):
         """
         :param full_field: np.array, (n+2) x (n+2) actual field that is hidden for players
         :param masked_field: np.array, (n+2) x (n+2) actual field with masks applied
@@ -25,14 +41,16 @@ class SimpleGame:
         self.tile_ids = tile_ids
         self.max_turn = max_turn
 
-        self.tile_gold = {f'tile{i}': i for i in range(1, 6)}
+        self.tile_gold = {f'gold{i}': i for i in range(1, 6)}
         self.ids_tile = {self.tile_ids[key]: key for key in self.tile_ids}
         self.n = self.masked_field.shape[0] - 2
 
         self.gold_field = np.zeros((self.n + 2, self.n + 2))
-        self.gold_left = self.calc_initial_gold()
-        self.first_score, self.second_score = 0, 0
+        self.initial_gold = self.calc_initial_gold()
+        self.gold_left = self.initial_gold
+        self.first_gold, self.second_gold = 0, 0
         self.game_finished = False
+        self.game_result = None
 
         first_positions = [((self.n+2)//2, 0)] * 4  # ship, pirate1, pirate2, pirate3
         second_positions = [((self.n+2)//2, self.n+1)] * 4
@@ -44,8 +62,6 @@ class SimpleGame:
                        'S': (0, 1), 'SW': (1, 1), 'W': (1, 0), 'NW': (1, -1)}
         self.dirs = (first_dirs, second_dirs)
         self.all_actions = self.calc_all_actions()
-        self.first_actions = self.calc_player_actions(1)
-        self.second_actions = self.calc_player_actions(2)
         self.turn_count = 0
         self.player_turn = 1
 
@@ -67,14 +83,16 @@ class SimpleGame:
         Prepare the listing of all possible actions
 
         :return: set, all actions in form of strings
-        example: 'pirate1_NE_gold' -> pirate1 go to North-East with gold
+        example: 'pir1_NE_g' -> pirate1 go to North-East with gold
         """
         actions = set()
         for i in range(1, 4):
             for dir_ in self.dirs[0]:
-                actions.add(f'pirate{i}_{dir_}')
+                actions.add(f'pir{i}_{dir_}')
+        gold_actions = set()
         for act in actions:
-            actions.add(act+'_gold')
+            gold_actions.add(act+'_g')
+        actions = actions.union(gold_actions)
         return actions
 
     def calc_pos_directions(self, player, pos):
@@ -123,14 +141,135 @@ class SimpleGame:
             i, j = pos
             directions = self.calc_pos_directions(player, pos)
             for dir_ in directions:
-                actions.add(f'pirate{pir}_{dir_}')
+                actions.add(f'pir{pir}_{dir_}')
             if self.gold_field[pos] != 0:
                 for dir_ in directions:
                     i_delta, j_delta = dirs[dir_]
                     pos_new = (i + i_delta, j + j_delta)
                     if not self.tile_in_mask(pos_new) and not self.tile_under_enemy(player, pos):
-                        actions.add(f'pirate{pir}_{dir_}_gold')
+                        actions.add(f'pir{pir}_{dir_}_g')
         return actions
+
+    def process_turn(self, player, action):
+        """
+        Make turn in the game
+
+        :param player: int, id of a player - 1 or 2
+        :param action: string, action to make
+        example: 'pir1_NE_g' -> pirate1 go to North-East with gold
+        :return: None
+        """
+        if self.game_finished:
+            raise GameError('Game has already finished')
+        if player != self.player_turn:
+            raise GameError('Wrong player')
+        possible_actions = self.calc_player_actions(player)
+        if action not in possible_actions:
+            raise GameError('Wrong action')
+        positions = self.positions[player - 1]
+        dirs = self.dirs[player - 1]
+        pir_id, direction, gold_flag = parse_action(action)
+        curr_pos = positions[pir_id]
+        delta = dirs[direction]
+        new_pos = (curr_pos[0] + delta[0], curr_pos[1] + delta[1])
+        self.move_pir(player, pir_id, new_pos)
+        self.discover_tile(new_pos)
+        if gold_flag:
+            self.move_gold(player, curr_pos, new_pos)
+        self.make_attack(player, new_pos)
+        self.check_endgame_condition()
+        self.pass_turn()
+        return
+
+    def move_pir(self, player, pir_id, new_pos):
+        """
+        Move pirate
+
+        :param player: int, id of a player - 1 or 2
+        :param pir_id: int, id of the pirate that will be moved
+        :param new_pos: tuple, coordinates of new position
+        :return: None
+        """
+        positions = self.positions[player - 1]
+        if positions[pir_id] == positions[0]:
+            for i in range(len(positions)):
+                positions[i] = new_pos
+        else:
+            positions[pir_id] = new_pos
+        return
+
+    def discover_tile(self, new_pos):
+        """
+        Discover tile if necessary
+
+        :param new_pos: tuple, coordinates of new position
+        :return: None
+        """
+        self.masked_field[new_pos] = self.full_field[new_pos]
+        tile = self.ids_tile[self.full_field[new_pos]]
+        self.gold_field[new_pos] = self.tile_gold.get(tile, 0)
+        return
+
+    def move_gold(self, player, curr_pos, new_pos):
+        """
+        Move gold
+
+        :param player: int, id of a player - 1 or 2
+        :param curr_pos: tuple, coordinates of previous position
+        :param new_pos: tuple, coordinates of new position
+        :return: None
+        """
+        self.gold_field[curr_pos] -= 1
+        positions = self.positions[player - 1]
+        if player == 1:
+            player_gold = self.first_gold
+        else:
+            player_gold = self.second_gold
+        if new_pos == positions[0]:
+            player_gold += 1
+        else:
+            self.gold_field[new_pos] += 1
+        return
+
+    def make_attack(self, player, new_pos):
+        """
+        Attack opponent if necessary
+
+        :param player: int, id of a player - 1 or 2
+        :param new_pos: tuple, coordinates of new position
+        :return: None
+        """
+        enemy_positions = self.positions[player % 2]
+        for i in range(len(enemy_positions)):
+            if enemy_positions[i] == new_pos:
+                enemy_positions[i] = enemy_positions[0]
+        return
+
+    def check_endgame_condition(self):
+        """
+        Check endgame condition
+
+        :return: None
+        """
+        if self.turn_count >= self.max_turn or self.first_gold + self.second_gold == self.initial_gold:
+            self.game_finished = True
+            if self.first_gold == self.second_gold:
+                self.game_result = 'draw'
+            elif self.first_gold > self.second_gold:
+                self.game_result = 'first'
+            else:
+                self.game_result = 'second'
+        return
+
+    def pass_turn(self):
+        """
+        Pass turn to other player
+
+        :return: None
+        """
+        self.turn_count += 1
+        self.player_turn = self.player_turn % 2 + 1
+        return
 
     def tile_in_sea(self, pos):
         """
@@ -177,7 +316,7 @@ class SimpleGame:
         :param pos: tuple(int, int), coordinates of position
         :return: bool
         """
-        enemy_positions = self.positions[player % 2 + 1]
+        enemy_positions = self.positions[player % 2]
         if pos in enemy_positions:
             return True
         return False
