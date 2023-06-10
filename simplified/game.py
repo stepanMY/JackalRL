@@ -49,8 +49,8 @@ class SimpleGame:
         self.initial_gold = self.calc_initial_gold()
         self.gold_left = self.initial_gold
         self.first_gold, self.second_gold = 0, 0
-        self.game_finished = False
-        self.game_result = None
+        self.finished = False
+        self.result = None
 
         first_positions = [((self.n+2)//2, 0)] * 4  # ship, pirate1, pirate2, pirate3
         second_positions = [((self.n+2)//2, self.n+1)] * 4
@@ -159,7 +159,7 @@ class SimpleGame:
         example: 'pir1_NE_g' -> pirate1 go to North-East with gold
         :return: None
         """
-        if self.game_finished:
+        if self.finished:
             raise GameError('Game has already finished')
         if player != self.player_turn:
             raise GameError('Wrong player')
@@ -192,8 +192,11 @@ class SimpleGame:
         """
         positions = self.positions[player - 1]
         if positions[pir_id] == positions[0]:
-            for i in range(len(positions)):
-                positions[i] = new_pos
+            if positions[pir_id][0] != new_pos[0]:
+                for i in range(len(positions)):
+                    positions[i] = new_pos
+            else:
+                positions[pir_id] = new_pos
         else:
             positions[pir_id] = new_pos
         return
@@ -252,13 +255,13 @@ class SimpleGame:
         :return: None
         """
         if self.turn_count >= self.max_turn or self.first_gold + self.second_gold == self.initial_gold:
-            self.game_finished = True
+            self.finished = True
             if self.first_gold == self.second_gold:
-                self.game_result = 'draw'
+                self.result = 'draw'
             elif self.first_gold > self.second_gold:
-                self.game_result = 'first'
+                self.result = 'first'
             else:
-                self.game_result = 'second'
+                self.result = 'second'
         return
 
     def pass_turn(self):
