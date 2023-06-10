@@ -12,9 +12,11 @@ print(field)
 print(masked_field)
 
 game = SimpleGame(field, masked_field, tile_ids)
+print(game.positions)
 player, action = 1, 'pir2_N'
 game.process_turn(player, action)
-player, action = 2, 'pir1_N'
+player, action = 2, 'pir1_E'
 game.process_turn(player, action)
 print('# ' * 10)
 print(game.masked_field)
+print(game.positions)

@@ -61,7 +61,16 @@ class SimpleGame:
         second_dirs = {'N': (0, -1), 'NE': (-1, -1), 'E': (-1, 0), 'SE': (-1, 1),
                        'S': (0, 1), 'SW': (1, 1), 'W': (1, 0), 'NW': (1, -1)}
         self.dirs = (first_dirs, second_dirs)
-        self.all_actions = self.calc_all_actions()
+        first_actions = {1: set(), 2: set(), 3: set()}
+        second_actions = {1: set(), 2: set(), 3: set()}
+        self.actions = (first_actions, second_actions)
+        self.update_possible_actions(1, 1)
+        self.update_possible_actions(1, 2)
+        self.update_possible_actions(1, 3)
+        self.update_possible_actions(2, 1)
+        self.update_possible_actions(2, 2)
+        self.update_possible_actions(2, 3)
+
         self.turn_count = 0
         self.player_turn = 1
 
@@ -78,53 +87,55 @@ class SimpleGame:
                 sum_ += self.tile_gold.get(tile, 0)
         return sum_
 
-    def calc_all_actions(self):
+    def update_possible_actions(self, player, pir_id):
         """
-        Prepare the listing of all possible actions
+        Update possible actions of the certain pirate of the certain player
 
-        :return: set, all actions in form of strings
-        example: 'pir1_NE_g' -> pirate1 go to North-East with gold
+        :param player: int, id of a player - 1 or 2
+        :param pir_id: int, id of the pirate whose possible actions need to be updated
+        :return: None
         """
-        actions = set()
-        for i in range(1, 4):
-            for dir_ in self.dirs[0]:
-                actions.add(f'pir{i}_{dir_}')
-        gold_actions = set()
-        for act in actions:
-            gold_actions.add(act+'_g')
-        actions = actions.union(gold_actions)
-        return actions
+        actions = self.actions[player - 1]
+        positions = self.positions[player - 1]
+        pos = positions[pir_id]
+        actions[pir_id] = self.calc_pos_actions(player, pos)
+        return
 
-    def calc_pos_directions(self, player, pos):
+    def calc_pos_actions(self, player, pos):
         """
-        Prepare the listing of player's possible directions from position
+        Prepare the listing of player's possible actions from position
 
         :param player: int, id of a player - 1 or 2
         :param pos: tuple(int, int), coordinates of position
-        :return: set, available directions of a player from position in form of strings
+        :return: set, available actions of a player from position in form of strings
         """
         positions = self.positions[player - 1]
         dirs = self.dirs[player-1]
         i, j = pos
         onship = pos == positions[0]
-        directions = set()
+        actions = set()
         if onship:
-            directions.add('N')
+            actions.add('N')
             for dir_ in {'W', 'E'}:
                 i_delta, j_delta = dirs[dir_]
                 pos_new = (i + i_delta, j + j_delta)
                 if not self.tile_ship_prohibited(pos_new):
-                    directions.add(dir_)
+                    actions.add(dir_)
         else:
             for dir_ in dirs:
                 i_delta, j_delta = dirs[dir_]
                 pos_new = (i + i_delta, j + j_delta)
                 if self.tile_in_sea(pos_new):
                     if pos_new == positions[0]:
-                        directions.add(dir_)
+                        actions.add(dir_)
+                        if self.gold_field[pos] > 0:
+                            actions.add(dir_+'_g')
                 else:
-                    directions.add(dir_)
-        return directions
+                    actions.add(dir_)
+                    if self.gold_field[pos] > 0 and not self.tile_in_mask(pos_new) and \
+                            not self.tile_under_enemy(player, pos_new):
+                        actions.add(dir_+'_g')
+        return actions
 
     def calc_player_actions(self, player):
         """
@@ -133,22 +144,12 @@ class SimpleGame:
         :param player: int, id of a player - 1 or 2
         :return: set, available actions of a player in form of strings
         """
-        positions = self.positions[player - 1]
-        dirs = self.dirs[player - 1]
-        actions = set()
-        for pir in range(1, 4):
-            pos = positions[pir]
-            i, j = pos
-            directions = self.calc_pos_directions(player, pos)
-            for dir_ in directions:
-                actions.add(f'pir{pir}_{dir_}')
-            if self.gold_field[pos] != 0:
-                for dir_ in directions:
-                    i_delta, j_delta = dirs[dir_]
-                    pos_new = (i + i_delta, j + j_delta)
-                    if not self.tile_in_mask(pos_new) and not self.tile_under_enemy(player, pos):
-                        actions.add(f'pir{pir}_{dir_}_g')
-        return actions
+        actions = self.actions[player - 1]
+        possible_actions = set()
+        for pir in actions:
+            for action in actions[pir]:
+                possible_actions.add(f'pir{pir}_{action}')
+        return possible_actions
 
     def process_turn(self, player, action):
         """
@@ -178,6 +179,9 @@ class SimpleGame:
             self.move_gold(player, curr_pos, new_pos)
         self.make_attack(player, new_pos)
         self.check_endgame_condition()
+        self.update_possible_actions(player % 2 + 1, 1)
+        self.update_possible_actions(player % 2 + 1, 2)
+        self.update_possible_actions(player % 2 + 1, 3)
         self.pass_turn()
         return
 
@@ -191,10 +195,12 @@ class SimpleGame:
         :return: None
         """
         positions = self.positions[player - 1]
-        if positions[pir_id] == positions[0]:
-            if positions[pir_id][0] != new_pos[0]:
+        ship_position = positions[0]
+        if positions[pir_id] == ship_position:
+            if ship_position[0] != new_pos[0]:
                 for i in range(len(positions)):
-                    positions[i] = new_pos
+                    if positions[i] == ship_position:
+                        positions[i] = new_pos
             else:
                 positions[pir_id] = new_pos
         else:
@@ -208,9 +214,10 @@ class SimpleGame:
         :param new_pos: tuple, coordinates of new position
         :return: None
         """
-        self.masked_field[new_pos] = self.full_field[new_pos]
-        tile = self.ids_tile[self.full_field[new_pos]]
-        self.gold_field[new_pos] = self.tile_gold.get(tile, 0)
+        if self.masked_field[new_pos] == self.tile_ids['unk']:
+            self.masked_field[new_pos] = self.full_field[new_pos]
+            tile = self.ids_tile[self.full_field[new_pos]]
+            self.gold_field[new_pos] = self.tile_gold.get(tile, 0)
         return
 
     def move_gold(self, player, curr_pos, new_pos):
@@ -224,12 +231,12 @@ class SimpleGame:
         """
         self.gold_field[curr_pos] -= 1
         positions = self.positions[player - 1]
-        if player == 1:
-            player_gold = self.first_gold
-        else:
-            player_gold = self.second_gold
         if new_pos == positions[0]:
-            player_gold += 1
+            if player == 1:
+                self.first_gold += 1
+            else:
+                self.second_gold += 1
+            self.gold_left -= 1
         else:
             self.gold_field[new_pos] += 1
         return
@@ -296,7 +303,7 @@ class SimpleGame:
         :return: bool
         """
         i, j = pos
-        if j <= 1 or j >= self.n:
+        if i <= 1 or i >= self.n:
             return True
         return False
 
