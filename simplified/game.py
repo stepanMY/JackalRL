@@ -21,6 +21,19 @@ def parse_action(action):
     return pir_id, direction, gold_flag
 
 
+def parse_dir(action):
+    """
+    Parses direction from action string
+
+    :param action: string, action to parse
+    :return: direction
+    """
+    action_ = action[2:4]
+    if action_[-1] == '_':
+        return action_[:-1]
+    return action_
+
+
 class SimpleGame:
     """
     Class that encapsulates simplified Jackal game logic
@@ -61,16 +74,14 @@ class SimpleGame:
         second_dirs = {'N': (0, -1), 'NE': (-1, -1), 'E': (-1, 0), 'SE': (-1, 1),
                        'S': (0, 1), 'SW': (1, 1), 'W': (1, 0), 'NW': (1, -1)}
         self.dirs = (first_dirs, second_dirs)
-        first_actions = {1: set(), 2: set(), 3: set()}
-        second_actions = {1: set(), 2: set(), 3: set()}
+        first_default_actions, second_default_actions = dict(), dict()
+        self.default_actions = (first_default_actions, second_default_actions)
+        self.update_default_actions(1), self.update_default_actions(2)
+        first_actions, second_actions = {1: set(), 2: set(), 3: set()}, {1: set(), 2: set(), 3: set()}
         self.actions = (first_actions, second_actions)
-        self.update_possible_actions(1, 1)
-        self.update_possible_actions(1, 2)
-        self.update_possible_actions(1, 3)
-        self.update_possible_actions(2, 1)
-        self.update_possible_actions(2, 2)
-        self.update_possible_actions(2, 3)
-
+        first_update_set, second_update_set = {1, 2, 3}, {1, 2, 3}
+        self.update_sets = (first_update_set, second_update_set)
+        self.update_player_possible_actions(1), self.update_player_possible_actions(2)
         self.turn_count = 0
         self.player_turn = 1
 
@@ -86,6 +97,63 @@ class SimpleGame:
                 tile = self.ids_tile[self.full_field[i, j]]
                 sum_ += self.tile_gold.get(tile, 0)
         return sum_
+
+    def update_default_actions(self, player):
+        """
+        Update default actions that player can make from certain positions
+
+        :param player: int, id of a player - 1 or 2
+        :return: None
+        """
+        dirs = self.dirs[player - 1]
+        player_default_actions = self.default_actions[player - 1]
+        for i in range(self.full_field.shape[0]):
+            for j in range(self.full_field.shape[1]):
+                pos = (i, j)
+                player_default_actions[pos] = {k: {'always': set(),
+                                                   'sometimes': {'ship': set(), 'gold': set(), 'ship_gold': set()}}
+                                               for k in range(1, 4)}
+                if self.tile_in_sea(pos) and self.tile_ship_prohibited(pos):
+                    continue
+                elif self.tile_in_sea(pos):
+                    for pir_id in range(1, 4):
+                        pir_id_ = str(pir_id)
+                        player_default_actions[pos][pir_id]['always'].add(pir_id_+'_'+'N')
+                    for dir_ in {'W', 'E'}:
+                        i_delta, j_delta = dirs[dir_]
+                        pos_new = (i + i_delta, j + j_delta)
+                        if not self.tile_ship_prohibited(pos_new):
+                            for pir_id in range(1, 4):
+                                pir_id_ = str(pir_id)
+                                player_default_actions[pos][pir_id]['always'].add(pir_id_+'_'+dir_)
+                else:
+                    for dir_ in dirs:
+                        i_delta, j_delta = dirs[dir_]
+                        pos_new = (i + i_delta, j + j_delta)
+                        if self.tile_in_sea(pos_new) and not self.tile_ship_prohibited(pos_new):
+                            for pir_id in range(1, 4):
+                                pir_id_ = str(pir_id)
+                                player_default_actions[pos][pir_id]['sometimes']['ship'].add(pir_id_+'_'+dir_)
+                                player_default_actions[pos][pir_id]['sometimes']['ship_gold'].add(pir_id_+'_'+dir_+'_g')
+                        elif not self.tile_in_sea(pos_new):
+                            for pir_id in range(1, 4):
+                                pir_id_ = str(pir_id)
+                                player_default_actions[pos][pir_id]['always'].add(pir_id_+'_'+dir_)
+                                player_default_actions[pos][pir_id]['sometimes']['gold'].add(pir_id_+'_'+dir_+'_g')
+        return
+
+    def update_player_possible_actions(self, player):
+        """
+        Update possible actions of the certain player
+
+        :param player: int, id of a player - 1 or 2
+        :return: None
+        """
+        update_set = self.update_sets[player - 1]
+        for pir in update_set:
+            self.update_possible_actions(player, pir)
+        update_set.clear()
+        return
 
     def update_possible_actions(self, player, pir_id):
         """
@@ -110,33 +178,38 @@ class SimpleGame:
         :param pos: tuple(int, int), coordinates of position
         :return: set, available actions of a player from position in form of strings
         """
+        default_actions = self.default_actions[player - 1]
         positions = self.positions[player - 1]
         dirs = self.dirs[player-1]
         i, j = pos
-        onship = pos == positions[0]
+        always = default_actions[pos][pir_id]['always']
+        sometimes_ship = default_actions[pos][pir_id]['sometimes']['ship']
+        sometimes_gold = default_actions[pos][pir_id]['sometimes']['gold']
+        gold_copied_flag = False
         pir_id_ = str(pir_id)
         actions = set()
-        if onship:
-            actions.add(pir_id_+'_'+'N')
-            for dir_ in {'W', 'E'}:
+        if len(sometimes_ship) > 0:
+            for dir_ in {'S', 'SE', 'SW'}:
                 i_delta, j_delta = dirs[dir_]
                 pos_new = (i + i_delta, j + j_delta)
-                if not self.tile_ship_prohibited(pos_new):
+                if pos_new == positions[0]:
                     actions.add(pir_id_+'_'+dir_)
-        else:
-            for dir_ in dirs:
-                i_delta, j_delta = dirs[dir_]
-                pos_new = (i + i_delta, j + j_delta)
-                if self.tile_in_sea(pos_new):
-                    if pos_new == positions[0]:
-                        actions.add(pir_id_+'_'+dir_)
-                        if self.gold_field[pos] > 0:
-                            actions.add(pir_id_+'_'+dir_+'_g')
-                else:
-                    actions.add(pir_id_+'_'+dir_)
-                    if self.gold_field[pos] > 0 and not self.tile_in_mask(pos_new) and \
-                            not self.tile_under_enemy(player, pos_new):
+                    if self.gold_field[pos] > 0:
                         actions.add(pir_id_+'_'+dir_+'_g')
+                    break
+        if self.gold_field[pos] > 0:
+            for action in always:
+                dir_ = parse_dir(action)
+                i_delta, j_delta = dirs[dir_]
+                pos_new = (i + i_delta, j + j_delta)
+                if self.tile_in_mask(pos_new) or self.tile_under_enemy(player, pos_new):
+                    if not gold_copied_flag:
+                        sometimes_gold = sometimes_gold.copy()
+                        gold_copied_flag = True
+                    sometimes_gold.remove(pir_id_+'_'+dir_+'_g')
+            actions = set.union(actions, always, sometimes_gold)
+        else:
+            actions = set.union(actions, always)
         return actions
 
     def calc_player_actions(self, player):
@@ -156,7 +229,7 @@ class SimpleGame:
 
         :param player: int, id of a player - 1 or 2
         :param action: string, action to make
-        example: 'pir1_NE_g' -> pirate1 go to North-East with gold
+        example: '1_NE_g' -> pirate1 go to North-East with gold
         :return: None
         """
         if self.finished:
@@ -177,10 +250,12 @@ class SimpleGame:
         if gold_flag:
             self.move_gold(player, curr_pos, new_pos)
         self.make_attack(player, new_pos)
+        player_update_set = self.update_sets[player - 1]
+        enemy_update_set = self.update_sets[player % 2]
+        player_update_set.update([1, 2, 3])
+        enemy_update_set.update([1, 2, 3])
         self.check_endgame_condition()
-        self.update_possible_actions(player % 2 + 1, 1)
-        self.update_possible_actions(player % 2 + 1, 2)
-        self.update_possible_actions(player % 2 + 1, 3)
+        self.update_player_possible_actions(player % 2 + 1)
         self.pass_turn()
         return
 
