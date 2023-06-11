@@ -98,14 +98,15 @@ class SimpleGame:
         actions = self.actions[player - 1]
         positions = self.positions[player - 1]
         pos = positions[pir_id]
-        actions[pir_id] = self.calc_pos_actions(player, pos)
+        actions[pir_id] = self.calc_pos_actions(player, pir_id, pos)
         return
 
-    def calc_pos_actions(self, player, pos):
+    def calc_pos_actions(self, player, pir_id, pos):
         """
         Prepare the listing of player's possible actions from position
 
         :param player: int, id of a player - 1 or 2
+        :param pir_id: int, id of the pirate whose possible actions need to be calculated
         :param pos: tuple(int, int), coordinates of position
         :return: set, available actions of a player from position in form of strings
         """
@@ -113,28 +114,29 @@ class SimpleGame:
         dirs = self.dirs[player-1]
         i, j = pos
         onship = pos == positions[0]
+        pir_id_ = str(pir_id)
         actions = set()
         if onship:
-            actions.add('N')
+            actions.add(pir_id_+'_'+'N')
             for dir_ in {'W', 'E'}:
                 i_delta, j_delta = dirs[dir_]
                 pos_new = (i + i_delta, j + j_delta)
                 if not self.tile_ship_prohibited(pos_new):
-                    actions.add(dir_)
+                    actions.add(pir_id_+'_'+dir_)
         else:
             for dir_ in dirs:
                 i_delta, j_delta = dirs[dir_]
                 pos_new = (i + i_delta, j + j_delta)
                 if self.tile_in_sea(pos_new):
                     if pos_new == positions[0]:
-                        actions.add(dir_)
+                        actions.add(pir_id_+'_'+dir_)
                         if self.gold_field[pos] > 0:
-                            actions.add(dir_+'_g')
+                            actions.add(pir_id_+'_'+dir_+'_g')
                 else:
-                    actions.add(dir_)
+                    actions.add(pir_id_+'_'+dir_)
                     if self.gold_field[pos] > 0 and not self.tile_in_mask(pos_new) and \
                             not self.tile_under_enemy(player, pos_new):
-                        actions.add(dir_+'_g')
+                        actions.add(pir_id_+'_'+dir_+'_g')
         return actions
 
     def calc_player_actions(self, player):
@@ -145,10 +147,7 @@ class SimpleGame:
         :return: set, available actions of a player in form of strings
         """
         actions = self.actions[player - 1]
-        possible_actions = set()
-        for pir in actions:
-            for action in actions[pir]:
-                possible_actions.add(f'pir{pir}_{action}')
+        possible_actions = set.union(actions[1], actions[2], actions[3])
         return possible_actions
 
     def process_turn(self, player, action):
@@ -314,7 +313,7 @@ class SimpleGame:
         :param pos: tuple(int, int), coordinates of position
         :return: bool
         """
-        if self.masked_field[pos] == 0:
+        if self.masked_field[pos] == self.tile_ids['unk']:
             return True
         return False
 
