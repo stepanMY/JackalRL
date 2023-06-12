@@ -130,7 +130,8 @@ class SimpleGame:
                     for dir_ in dirs:
                         i_delta, j_delta = dirs[dir_]
                         pos_new = (i + i_delta, j + j_delta)
-                        if self.tile_in_sea(pos_new) and not self.tile_ship_prohibited(pos_new):
+                        if self.tile_in_sea(pos_new) and not self.tile_ship_prohibited(pos_new) \
+                                and not self.tile_under_enemy(player, pos_new):
                             for pir_id in range(1, 4):
                                 pir_id_ = str(pir_id)
                                 player_default_actions[pos][pir_id]['sometimes']['ship'].add(pir_id_+'_'+dir_)
@@ -246,14 +247,10 @@ class SimpleGame:
         delta = dirs[direction]
         new_pos = (curr_pos[0] + delta[0], curr_pos[1] + delta[1])
         self.move_pir(player, pir_id, new_pos)
-        self.discover_tile(new_pos)
+        self.discover_tile(player, new_pos)
         if gold_flag:
             self.move_gold(player, curr_pos, new_pos)
         self.make_attack(player, new_pos)
-        player_update_set = self.update_sets[player - 1]
-        enemy_update_set = self.update_sets[player % 2]
-        player_update_set.update([1, 2, 3])
-        enemy_update_set.update([1, 2, 3])
         self.check_endgame_condition()
         self.update_player_possible_actions(player % 2 + 1)
         self.pass_turn()
@@ -268,30 +265,55 @@ class SimpleGame:
         :param new_pos: tuple, coordinates of new position
         :return: None
         """
-        positions = self.positions[player - 1]
+        player_update_set, enemy_update_set = self.update_sets[player - 1], self.update_sets[player % 2]
+        dirs = self.dirs[player - 1]
+        positions, enemy_positions = self.positions[player - 1], self.positions[player % 2]
         ship_position = positions[0]
         if positions[pir_id] == ship_position:
             if ship_position[0] != new_pos[0]:
+                affected_positions = set.union({(positions[pir_id][0]+dirs[dir_][0], positions[pir_id][1]+dirs[dir_][1])
+                                                for dir_ in ['N', 'NE', 'NW']},
+                                               {(new_pos[0]+dirs[dir_][0], new_pos[1]+dirs[dir_][1])
+                                                for dir_ in ['N', 'NE', 'NW']})
                 for i in range(len(positions)):
                     if positions[i] == ship_position:
                         positions[i] = new_pos
+                        if i > 0:
+                            player_update_set.add(i)
+                    elif positions[i] in affected_positions:
+                        if i > 0:
+                            player_update_set.add(i)
             else:
                 positions[pir_id] = new_pos
+                player_update_set.add(pir_id)
+                for enemy_id in range(1, 4):
+                    if self.gold_field[enemy_positions[enemy_id]] > 0:
+                        enemy_update_set.add(enemy_id)
         else:
             positions[pir_id] = new_pos
+            player_update_set.add(pir_id)
+            for enemy_id in range(1, 4):
+                if self.gold_field[enemy_positions[enemy_id]] > 0:
+                    enemy_update_set.add(enemy_id)
         return
 
-    def discover_tile(self, new_pos):
+    def discover_tile(self, player, new_pos):
         """
         Discover tile if necessary
 
+        :param player: int, id of a player - 1 or 2
         :param new_pos: tuple, coordinates of new position
         :return: None
         """
+        player_update_set = self.update_sets[player - 1]
+        positions = self.positions[player - 1]
         if self.masked_field[new_pos] == self.tile_ids['unk']:
             self.masked_field[new_pos] = self.full_field[new_pos]
             tile = self.ids_tile[self.full_field[new_pos]]
             self.gold_field[new_pos] = self.tile_gold.get(tile, 0)
+            for pir_id in range(1, 4):
+                if self.gold_field[positions[pir_id]] > 0:
+                    player_update_set.add(pir_id)
         return
 
     def move_gold(self, player, curr_pos, new_pos):
@@ -303,8 +325,13 @@ class SimpleGame:
         :param new_pos: tuple, coordinates of new position
         :return: None
         """
-        self.gold_field[curr_pos] -= 1
+        player_update_set = self.update_sets[player - 1]
         positions = self.positions[player - 1]
+        self.gold_field[curr_pos] -= 1
+        if self.gold_field[curr_pos] == 0:
+            for pir_id in range(1, 4):
+                if positions[pir_id] == curr_pos:
+                    player_update_set.add(pir_id)
         if new_pos == positions[0]:
             if player == 1:
                 self.first_gold += 1
@@ -313,6 +340,10 @@ class SimpleGame:
             self.gold_left -= 1
         else:
             self.gold_field[new_pos] += 1
+            if self.gold_field[new_pos] > 1:
+                for pir_id in range(1, 4):
+                    if positions[pir_id] == new_pos:
+                        player_update_set.add(pir_id)
         return
 
     def make_attack(self, player, new_pos):
@@ -323,10 +354,12 @@ class SimpleGame:
         :param new_pos: tuple, coordinates of new position
         :return: None
         """
+        enemy_update_set = self.update_sets[player % 2]
         enemy_positions = self.positions[player % 2]
-        for i in range(len(enemy_positions)):
-            if enemy_positions[i] == new_pos:
-                enemy_positions[i] = enemy_positions[0]
+        for enemy_id in range(1, 4):
+            if enemy_positions[enemy_id] == new_pos:
+                enemy_positions[enemy_id] = enemy_positions[0]
+                enemy_update_set.add(enemy_id)
         return
 
     def check_endgame_condition(self):
