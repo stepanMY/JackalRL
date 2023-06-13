@@ -340,7 +340,7 @@ class SimpleGame:
             self.gold_left -= 1
         else:
             self.gold_field[new_pos] += 1
-            if self.gold_field[new_pos] > 1:
+            if self.gold_field[new_pos] == 1:
                 for pir_id in range(1, 4):
                     if positions[pir_id] == new_pos:
                         player_update_set.add(pir_id)
