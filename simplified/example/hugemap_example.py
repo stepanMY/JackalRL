@@ -5,15 +5,15 @@ from simplified.util.visualizer import MapVisualizer
 from simplified.util.viewer import GameViewer
 from simplified.game import SimpleGame
 from simplified.agents.baseline_agents import SemiGreedyAgent, GreedyAgent
-RANDOM_SEED = 42
+RANDOM_SEED = 150
 np.random.seed(RANDOM_SEED)
 
-n = 5
-tile_counts = {'ground': 15, 'gold1': 3, 'gold2': 2, 'gold3': 1}
-tile_ids = {'unk': 0, 'sea': 1, 'ground': 2, 'gold1': 3, 'gold2': 4, 'gold3': 5}
+n = 11
+tile_counts = {'ground': 101, 'gold1': 5, 'gold2': 5, 'gold3': 3, 'gold4': 2, 'gold5': 1}
+tile_ids = {'unk': 0, 'sea': 1, 'ground': 2, 'gold1': 3, 'gold2': 4, 'gold3': 5, 'gold4': 6, 'gold5': 7}
 mapgen = MapGenerator(n, tile_counts, tile_ids)
 agent1 = GreedyAgent(player=1)
-agent2 = GreedyAgent(player=2)
+agent2 = SemiGreedyAgent(player=2)
 n_iter = 1
 n_samples = n_iter
 
@@ -45,7 +45,7 @@ for i in range(fields.shape[0]):
         game_progress.append(progress_tuple)
 
 image_dir = 'C:\\Users\\stepanmy\\PycharmProjects\\JackalRL\\images\\'
-tile_images = {0: 'unk', 1: 'sea', 2: 'ground', 3: 'gold1', 4: 'gold2', 5: 'gold3'}
+tile_images = {0: 'unk', 1: 'sea', 2: 'ground', 3: 'gold1', 4: 'gold2', 5: 'gold3', 6: 'gold4', 7: 'gold5'}
 position_images = {(1, 0): 'boat_white', (1, 1): 'white1', (1, 2): 'white2', (1, 3): 'white3',
                    (2, 0): 'boat_black', (2, 1): 'black1', (2, 2): 'black2', (2, 3): 'black3'}
 font_dir = 'C:\\Users\\stepanmy\\PycharmProjects\\JackalRL\\fonts\\'

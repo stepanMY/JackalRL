@@ -82,13 +82,8 @@ class GreedyAgent:
         elif np.sum(game.gold_field) > 0:
             pir_id, shortest_path = self.find_shortest_path(game, 'gold', gold_positions, (0, 0))
         elif np.sum(game.masked_field == game.tile_ids['unk']) > 0:
-            appropriate = np.where(game.masked_field == game.tile_ids['unk'])
-            if self.player == 1:
-                indx = np.argmin(appropriate[1])
-            else:
-                indx = np.argmax(appropriate[1])
-            exact_pos = (appropriate[0][indx], appropriate[1][indx])
-            pir_id, shortest_path = self.find_shortest_path(game, 'exact', gold_positions, exact_pos)
+            closest_unk = self.bfs(game, 0, 'unk', (0, 0))[-1]
+            pir_id, shortest_path = self.find_shortest_path(game, 'exact', gold_positions, closest_unk)
         if pir_id is not None:
             pos, pos_new = shortest_path[0], shortest_path[1]
             dir_ = choose_direction(pos, pos_new, dirs)
@@ -109,7 +104,7 @@ class GreedyAgent:
 
         :param game: object of SimpleGame, current state of the game
         :param pir_id: int, id of the pirate from whose position the shortest paths will be discovered
-        :param mode: string, 'exact'/'gold'/'ship'
+        :param mode: string, 'unk'/'exact'/'gold'/'ship'
         :param exact_pos: tuple(int, int), position to look for, used only in 'exact' mode
         :return: list of nodes, the shortest path
         """
@@ -121,7 +116,11 @@ class GreedyAgent:
         bfs_que = deque([positions[pir_id]])
         while len(bfs_que) != 0:
             pos = bfs_que.popleft()
-            if mode == 'exact':
+            if mode == 'unk':
+                if game.tile_in_mask(pos):
+                    found_pos = pos
+                    break
+            elif mode == 'exact':
                 if pos == exact_pos:
                     found_pos = pos
                     break
@@ -229,13 +228,8 @@ class SemiGreedyAgent(GreedyAgent):
             pir_id_gold, shortest_path_gold = self.find_shortest_path(game, 'gold', gold_positions, (0, 0))
         pir_id_unk, shortest_path_unk = None, None
         if np.sum(game.masked_field == game.tile_ids['unk']) > 0:
-            appropriate = np.where(game.masked_field == game.tile_ids['unk'])
-            if self.player == 1:
-                indx = np.argmin(appropriate[1])
-            else:
-                indx = np.argmax(appropriate[1])
-            exact_pos = (appropriate[0][indx], appropriate[1][indx])
-            pir_id_unk, shortest_path_unk = self.find_shortest_path(game, 'exact', gold_positions, exact_pos)
+            closest_unk = self.bfs(game, 0, 'unk', (0, 0))[-1]
+            pir_id_unk, shortest_path_unk = self.find_shortest_path(game, 'exact', gold_positions, closest_unk)
         if pir_id_gold is not None and pir_id_unk is None:
             pos, pos_new = shortest_path_gold[0], shortest_path_gold[1]
             dir_ = choose_direction(pos, pos_new, dirs)
