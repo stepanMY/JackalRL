@@ -76,44 +76,29 @@ class GreedyAgent:
         for pir_id in range(1, 4):
             if game.gold_field[positions[pir_id]] > 0:
                 gold_positions.append(pir_id)
+        pir_id, shortest_path = None, None
         if len(gold_positions) > 0:
-            shortest_paths = []
-            for pir_id in gold_positions:
-                shortest_path = self.bfs(game, pir_id, 'ship', (0, 0))
-                shortest_paths.append((pir_id, shortest_path))
-            pir_id, shortest_path = min(shortest_paths, key=lambda x: len(x[1]))
-            pos, pos_new = shortest_path[0], shortest_path[1]
-            dir_ = choose_direction(pos, pos_new, dirs)
-            if game.tile_under_enemy(self.player, pos_new) or game.tile_in_mask(pos_new):
-                action = str(pir_id)+'_'+dir_
-                return action
-            else:
-                action = str(pir_id)+'_'+dir_+'_g'
-                return action
-        if np.sum(game.gold_field) > 0:
-            shortest_paths = []
-            for pir_id in range(1, 4):
-                shortest_path = self.bfs(game, pir_id, 'gold', (0, 0))
-                shortest_paths.append((pir_id, shortest_path))
-            pir_id, shortest_path = min(shortest_paths, key=lambda x: len(x[1]))
-            pos, pos_new = shortest_path[0], shortest_path[1]
-            dir_ = choose_direction(pos, pos_new, dirs)
-            action = str(pir_id)+'_'+dir_
-            return action
-        if np.sum(game.masked_field == game.tile_ids['unk']) > 0:
+            pir_id, shortest_path = self.find_shortest_path(game, 'ship', gold_positions, (0, 0))
+        elif np.sum(game.gold_field) > 0:
+            pir_id, shortest_path = self.find_shortest_path(game, 'gold', gold_positions, (0, 0))
+        elif np.sum(game.masked_field == game.tile_ids['unk']) > 0:
             appropriate = np.where(game.masked_field == game.tile_ids['unk'])
             if self.player == 1:
                 indx = np.argmin(appropriate[1])
             else:
                 indx = np.argmax(appropriate[1])
             exact_pos = (appropriate[0][indx], appropriate[1][indx])
-            shortest_paths = []
-            for pir_id in range(1, 4):
-                shortest_path = self.bfs(game, pir_id, 'exact', exact_pos)
-                shortest_paths.append((pir_id, shortest_path))
-            pir_id, shortest_path = min(shortest_paths, key=lambda x: len(x[1]))
+            pir_id, shortest_path = self.find_shortest_path(game, 'exact', gold_positions, exact_pos)
+        if pir_id is not None:
             pos, pos_new = shortest_path[0], shortest_path[1]
             dir_ = choose_direction(pos, pos_new, dirs)
+            if len(gold_positions) > 0:
+                if game.tile_under_enemy(self.player, pos_new) or game.tile_in_mask(pos_new):
+                    action = str(pir_id)+'_'+dir_
+                    return action
+                else:
+                    action = str(pir_id)+'_'+dir_+'_g'
+                    return action
             action = str(pir_id)+'_'+dir_
             return action
         raise AgentError('Unable to make a greedy move')
@@ -126,7 +111,7 @@ class GreedyAgent:
         :param pir_id: int, id of the pirate from whose position the shortest paths will be discovered
         :param mode: string, 'exact'/'gold'/'ship'
         :param exact_pos: tuple(int, int), position to look for, used only in 'exact' mode
-        :return:
+        :return: list of nodes, the shortest path
         """
         dirs = game.dirs[self.player - 1]
         positions = game.positions[self.player - 1]
@@ -177,3 +162,102 @@ class GreedyAgent:
             shortest_path_.append(previous[shortest_path_[-1]])
         shortest_path = shortest_path_[::-1]
         return shortest_path
+
+    def find_shortest_path(self, game, mode, gold_positions, exact_pos):
+        """
+        Find the shortest path among all pirates
+
+        :param game: object of SimpleGame, current state of the game
+        :param mode: string, 'exact'/'gold'/'ship'
+        :param gold_positions: list of tuples, ids of pirates with gold, used only in 'ship' mode
+        :param exact_pos: tuple(int, int), position to look for, used only in 'exact' mode
+        :return: pir_id, shortest_path (list of nodes)
+        """
+        shortest_paths = []
+        if mode == 'ship':
+            iterator = gold_positions
+        else:
+            iterator = range(1, 4)
+        for pir_id in iterator:
+            shortest_path = self.bfs(game, pir_id, mode, exact_pos)
+            shortest_paths.append((pir_id, shortest_path))
+        pir_id, shortest_path = min(shortest_paths, key=lambda x: len(x[1]))
+        return pir_id, shortest_path
+
+
+class SemiGreedyAgent(GreedyAgent):
+    """
+    Class that encapsulates logic of semi-greedy agent:
+    If it has gold in one of his tiles, tries to bring it to the ship
+    Otherwise it chooses between gold and unk tile based on tradeoff of costs
+    """
+    def __init__(self, player, gold_price=1.0, unk_price=1.5):
+        """
+        :param player: int, id of a player - 1 or 2
+        :param gold_price: float, cost of movement towards gold
+        :param unk_price: float, cost of movement towards unknown tile
+        """
+        super().__init__(player)
+        self.gold_price = gold_price
+        self.unk_price = unk_price
+
+    def choose_action(self, game):
+        """
+        Choose action in semi-greedy manner
+
+        :param game: object of SimpleGame, current state of the game
+        :return:
+        """
+        dirs = game.dirs[self.player - 1]
+        positions = game.positions[self.player - 1]
+        gold_positions = []
+        for pir_id in range(1, 4):
+            if game.gold_field[positions[pir_id]] > 0:
+                gold_positions.append(pir_id)
+        if len(gold_positions) > 0:
+            pir_id, shortest_path = self.find_shortest_path(game, 'ship', gold_positions, (0, 0))
+            pos, pos_new = shortest_path[0], shortest_path[1]
+            dir_ = choose_direction(pos, pos_new, dirs)
+            if game.tile_under_enemy(self.player, pos_new) or game.tile_in_mask(pos_new):
+                action = str(pir_id)+'_'+dir_
+                return action
+            else:
+                action = str(pir_id)+'_'+dir_+'_g'
+                return action
+        pir_id_gold, shortest_path_gold = None, None
+        if np.sum(game.gold_field) > 0:
+            pir_id_gold, shortest_path_gold = self.find_shortest_path(game, 'gold', gold_positions, (0, 0))
+        pir_id_unk, shortest_path_unk = None, None
+        if np.sum(game.masked_field == game.tile_ids['unk']) > 0:
+            appropriate = np.where(game.masked_field == game.tile_ids['unk'])
+            if self.player == 1:
+                indx = np.argmin(appropriate[1])
+            else:
+                indx = np.argmax(appropriate[1])
+            exact_pos = (appropriate[0][indx], appropriate[1][indx])
+            pir_id_unk, shortest_path_unk = self.find_shortest_path(game, 'exact', gold_positions, exact_pos)
+        if pir_id_gold is not None and pir_id_unk is None:
+            pos, pos_new = shortest_path_gold[0], shortest_path_gold[1]
+            dir_ = choose_direction(pos, pos_new, dirs)
+            action = str(pir_id_gold)+'_'+dir_
+            return action
+        elif pir_id_unk is not None and pir_id_gold is None:
+            pos, pos_new = shortest_path_unk[0], shortest_path_unk[1]
+            dir_ = choose_direction(pos, pos_new, dirs)
+            action = str(pir_id_unk)+'_'+dir_
+            return action
+        elif pir_id_gold is not None and pir_id_unk is not None:
+            gold_cost = self.gold_price*(len(shortest_path_gold) - 1)
+            unk_cost = self.unk_price*(len(shortest_path_unk) - 1)
+            if gold_cost <= unk_cost:
+                pos, pos_new = shortest_path_gold[0], shortest_path_gold[1]
+                dir_ = choose_direction(pos, pos_new, dirs)
+                action = str(pir_id_gold) + '_' + dir_
+                return action
+            else:
+                pos, pos_new = shortest_path_unk[0], shortest_path_unk[1]
+                dir_ = choose_direction(pos, pos_new, dirs)
+                action = str(pir_id_unk) + '_' + dir_
+                return action
+        raise AgentError('Unable to make a semi-greedy move')
+

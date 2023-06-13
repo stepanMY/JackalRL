@@ -4,15 +4,15 @@ from simplified.util.generator import MapGenerator
 from simplified.util.visualizer import MapVisualizer
 from simplified.util.viewer import GameViewer
 from simplified.game import SimpleGame
-from simplified.agents.baseline_agents import GreedyAgent
-RANDOM_SEED = 42
+from simplified.agents.baseline_agents import SemiGreedyAgent, GreedyAgent
+RANDOM_SEED = 15
 np.random.seed(RANDOM_SEED)
 
 n = 5
 tile_counts = {'ground': 15, 'gold1': 3, 'gold2': 2, 'gold3': 1}
 tile_ids = {'unk': 0, 'sea': 1, 'ground': 2, 'gold1': 3, 'gold2': 4, 'gold3': 5}
 mapgen = MapGenerator(n, tile_counts, tile_ids)
-agent1 = GreedyAgent(player=1)
+agent1 = SemiGreedyAgent(player=1)
 agent2 = GreedyAgent(player=2)
 n_iter = 1
 n_samples = n_iter
