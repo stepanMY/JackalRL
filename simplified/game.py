@@ -85,6 +85,8 @@ class SimpleGame:
         self.turn_count = 0
         self.player_turn = 1
 
+        self.last_turn = []  # pos, next_pos, gold_flag, attack_flag (for encoding)
+
     def calc_initial_gold(self):
         """
         Count all initial gold
@@ -242,14 +244,17 @@ class SimpleGame:
             raise GameError('Wrong action')
         positions = self.positions[player - 1]
         dirs = self.dirs[player - 1]
+        self.last_turn = [0, 0, 0, 0]
         pir_id, direction, gold_flag = parse_action(action)
         curr_pos = positions[pir_id]
         delta = dirs[direction]
         new_pos = (curr_pos[0] + delta[0], curr_pos[1] + delta[1])
         self.move_pir(player, pir_id, new_pos)
+        self.last_turn[:2] = [curr_pos, new_pos]
         self.discover_tile(player, new_pos)
         if gold_flag:
             self.move_gold(player, curr_pos, new_pos)
+            self.last_turn[2] = 1
         self.make_attack(player, new_pos)
         self.check_endgame_condition()
         self.update_player_possible_actions(player % 2 + 1)
@@ -360,6 +365,7 @@ class SimpleGame:
             if enemy_positions[enemy_id] == new_pos:
                 enemy_positions[enemy_id] = enemy_positions[0]
                 enemy_update_set.add(enemy_id)
+                self.last_turn[3] = 1
         return
 
     def check_endgame_condition(self):

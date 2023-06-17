@@ -26,7 +26,7 @@ def choose_direction(pos, pos_new, directions):
 
 class RandomAgent:
     """
-    Class that encapsulate logic of agent that makes random possible actions
+    Class that encapsulates logic of agent that makes random possible actions
     """
     def __init__(self,
                  player,
