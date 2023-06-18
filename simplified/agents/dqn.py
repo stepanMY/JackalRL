@@ -1,6 +1,6 @@
 import numpy as np
 import torch
-from simplified.util.nn import ResUnet
+from ..util.nn import ResUnet
 
 
 class EncoderError(Exception):
