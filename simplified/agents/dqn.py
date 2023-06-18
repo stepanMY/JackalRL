@@ -54,7 +54,8 @@ class DqnEncoder:
         self.total_gold = self.baseline_game.initial_gold
         self.max_turn = self.baseline_game.max_turn
         self.unk_id = self.baseline_game.tile_ids['unk']
-        self.previous_turns = {i: np.zeros((self.previous_k_turns, self.n, self.n)) for i in range(self.n_games)}
+        self.previous_turns = {i: np.zeros((self.previous_k_turns, self.n, self.n), dtype=np.float32)
+                               for i in range(self.n_games)}
 
     def encode(self, games, player):
         """
@@ -71,7 +72,7 @@ class DqnEncoder:
                 indexes.append(i)
         if len(indexes) == 0:
             raise EncoderError('All games have already finished')
-        encoding = np.zeros((len(indexes), 16 + self.previous_k_turns, self.n, self.n))
+        encoding = np.zeros((len(indexes), 16 + self.previous_k_turns, self.n, self.n), dtype=np.float32)
         encoding[:, 10:16, :, :] = 1
         player_gold, enemy_gold, remained_gold, onfield_gold, undiscovered_gold, game_length = [], [], [], [], [], []
         encoding_index = 0
@@ -133,7 +134,7 @@ class DqnEncoder:
             raise EncoderError('All games have already finished')
         for i in range(len(indexes)):
             game = games[i]
-            previous_turns = np.zeros((self.previous_k_turns, self.n, self.n))
+            previous_turns = np.zeros((self.previous_k_turns, self.n, self.n), dtype=np.float32)
             previous_turns[:-1, :, :] = self.previous_turns[i][1:, :, :]
             pos, pos_new, gold_flag, attack_flag = game.last_turn
             previous_turns[-1, pos_new[0], pos_new[1]] = 1
