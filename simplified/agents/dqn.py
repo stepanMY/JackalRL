@@ -88,7 +88,7 @@ class DqnEncoder:
         encoding[:, 10:16, :, :] = 1
         player_gold, enemy_gold, remained_gold, onfield_gold, undiscovered_gold, game_length = [], [], [], [], [], []
         encoding_index = 0
-        for i in range(len(indexes)):
+        for i in indexes:
             game = games[i]
             encoding[encoding_index, 0, :, :] = game.masked_field
             encoding[encoding_index, 1, :, :] = game.gold_field
@@ -147,7 +147,7 @@ class DqnEncoder:
                 indexes.append(i)
         if len(indexes) == 0:
             raise EncoderError('All games have already finished')
-        for i in range(len(indexes)):
+        for i in indexes:
             game = games[i]
             previous_turns = np.zeros((self.previous_k_turns, self.n, self.n), dtype=np.float32)
             previous_turns[:-1, :, :] = self.previous_turns[i][1:, :, :]
