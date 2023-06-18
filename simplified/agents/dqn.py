@@ -56,6 +56,15 @@ class DqnEncoder:
         self.unk_id = self.baseline_game.tile_ids['unk']
         self.previous_turns = {i: np.zeros((self.previous_k_turns, self.n, self.n), dtype=np.float32)
                                for i in range(self.n_games)}
+        dirs = sorted(self.baseline_game.dirs[0].keys())
+        all_actions = []
+        for pir_id in range(1, 4):
+            for dir_ in dirs:
+                all_actions.append(f'{pir_id}_{dir_}')
+            for dir_ in dirs:
+                all_actions.append(f'{pir_id}_{dir_}_g')
+        self.id_action = {i: all_actions[i] for i in range(len(all_actions))}
+        self.action_id = {self.id_action[key]: key for key in self.id_action}
 
     def encode(self, games, player):
         """
@@ -63,7 +72,7 @@ class DqnEncoder:
 
         :param games: list of SimpleGame objects, games states that will be encoded
         :param player: int, id of a player - 1 or 2
-        :return: (list, np.array), indexes of games and array encoding
+        :return: (list, np.array, np.array), indexes of games, array encoding and encoding of possible actions
         """
         indexes = []
         for i in range(len(games)):
@@ -73,6 +82,7 @@ class DqnEncoder:
         if len(indexes) == 0:
             raise EncoderError('All games have already finished')
         encoding = np.zeros((len(indexes), 16 + self.previous_k_turns, self.n, self.n), dtype=np.float32)
+        available_actions = np.zeros((len(indexes), len(self.action_id)))
         encoding[:, 10:16, :, :] = 1
         player_gold, enemy_gold, remained_gold, onfield_gold, undiscovered_gold, game_length = [], [], [], [], [], []
         encoding_index = 0
@@ -105,6 +115,9 @@ class DqnEncoder:
                 else:
                     encoding[encoding_index, 16 + self.previous_k_turns - 1, pos[0], pos[1]] = -1
                 self.previous_turns[i] = encoding[encoding_index, 16: 16 + self.previous_k_turns, :, :]
+            possible_actions = game.calc_player_actions(1)
+            for action in possible_actions:
+                available_actions[encoding_index, self.action_id[action]] = 1
             encoding_index += 1
         mask = (encoding[:, 0, :, :] != self.unk_id).nonzero()
         encoding[mask[0], 0, mask[1], mask[2]] = 1
@@ -116,7 +129,7 @@ class DqnEncoder:
         encoding[:, 15, :, :] *= (np.array(game_length)/self.max_turn)[:, None, None]
         if player == 2:
             encoding = inverse_encoding(encoding)
-        return indexes, encoding
+        return indexes, encoding, available_actions
 
     def update_previous_turns(self, games):
         """

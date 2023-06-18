@@ -26,7 +26,7 @@ limit = 5
 actions = []
 
 for j in range(max_turn // 2):
-    indexes1, encoding1 = dqn_encoder.encode(games, 1)
+    indexes1, encoding1, actions1 = dqn_encoder.encode(games, 1)
     for i in range(len(games)):
         game = games[i]
         if game.finished:
@@ -35,7 +35,7 @@ for j in range(max_turn // 2):
         game.process_turn(1, action1)
         if i == 0:
             actions.append((game.last_turn, action1))
-    indexes2, encoding2 = dqn_encoder.encode(games, 2)
+    indexes2, encoding2, actions2 = dqn_encoder.encode(games, 2)
     #dqn_encoder.update_previous_turns(games)
     for i in range(len(games)):
         game = games[i]
@@ -48,18 +48,21 @@ for j in range(max_turn // 2):
     if j >= limit:
         break
 
-indexes1, encoding1 = dqn_encoder.encode(games, 1)
-indexes2, encoding2 = dqn_encoder.encode(games, 2)
-print(games[0].masked_field)
-print(games[0].gold_field)
-print(games[0].first_gold, games[0].second_gold, games[0].gold_left, games[0].positions)
-print('#' * 10)
-print(encoding2[0, 6, :, :])
-print(encoding2[0, 7, :, :])
-print(encoding2[0, 8, :, :])
-print(encoding2[0, 9, :, :])
-print(encoding1.shape)
-print(encoding2.shape)
+indexes1, encoding1, actions1 = dqn_encoder.encode(games, 1)
+indexes2, encoding2, actions2 = dqn_encoder.encode(games, 2)
+print(actions1[0])
+print(dqn_encoder.id_action)
+print(dqn_encoder.action_id)
+#print(games[0].masked_field)
+#print(games[0].gold_field)
+#print(games[0].first_gold, games[0].second_gold, games[0].gold_left, games[0].positions)
+#print('#' * 10)
+#print(encoding2[0, 6, :, :])
+#print(encoding2[0, 7, :, :])
+#print(encoding2[0, 8, :, :])
+#print(encoding2[0, 9, :, :])
+#print(encoding1.shape)
+#print(encoding2.shape)
 
 #print(actions)
 #print('#' * 10)
