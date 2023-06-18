@@ -204,7 +204,7 @@ class DqnAgent:
         :param greedy: bool, whether to use greedy or eps-greedy mode
         :return: list(string), list of actions to make in each of encoded games
         """
-        qvalues = self.qvalues(encoding)
+        qvalues = self.qvalues(encoding).detach().cpu().numpy()
         arry = np.array(qvalues)
         arry[possible_actions != 1] = -np.inf
         greedy_actionids = np.argmax(arry, axis=1)
