@@ -254,4 +254,3 @@ class SemiGreedyAgent(GreedyAgent):
                 action = str(pir_id_unk) + '_' + dir_
                 return action
         raise AgentError('Unable to make a semi-greedy move')
-
