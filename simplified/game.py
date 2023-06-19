@@ -86,6 +86,7 @@ class SimpleGame:
         self.player_turn = 1
 
         self.last_turn = []  # pos, next_pos, gold_flag, attack_flag (for encoding)
+        self.last_reward = 0  # reward achieved in last episode (for encoding)
 
     def calc_initial_gold(self):
         """
@@ -245,6 +246,7 @@ class SimpleGame:
         positions = self.positions[player - 1]
         dirs = self.dirs[player - 1]
         self.last_turn = [0, 0, 0, 0]
+        self.last_reward = 0
         pir_id, direction, gold_flag = parse_action(action)
         curr_pos = positions[pir_id]
         delta = dirs[direction]
@@ -340,8 +342,10 @@ class SimpleGame:
         if new_pos == positions[0]:
             if player == 1:
                 self.first_gold += 1
+                self.last_reward = 1
             else:
                 self.second_gold += 1
+                self.last_reward = 1
             self.gold_left -= 1
         else:
             self.gold_field[new_pos] += 1
