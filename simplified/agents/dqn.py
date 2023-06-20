@@ -202,7 +202,7 @@ class DqnAgent:
         :param encoding: np.array, encoding of game states
         :param possible_actions: np.array, encoding of possible actions
         :param greedy: bool, whether to use greedy or eps-greedy mode
-        :return: list(string), list of actions to make in each of encoded games
+        :return: np.array, list(string), array of ids and list of actions to make in each of encoded games
         """
         qvalues = self.qvalues(encoding).detach().cpu().numpy()
         arry = np.array(qvalues)
@@ -218,7 +218,7 @@ class DqnAgent:
             result_actionids = greedy_actionids
             result_actionids[random_eps_weights <= self.eps] = random_actionids[random_eps_weights <= self.eps]
             actions = list(np.vectorize(self.id_action.get)(greedy_actionids))
-        return actions
+        return greedy_actionids, actions
 
     def qvalues(self, encoding):
         """
