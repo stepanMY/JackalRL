@@ -210,15 +210,15 @@ class DqnAgent:
         greedy_actionids = np.argmax(arry, axis=1)
         if greedy:
             actions = list(np.vectorize(self.id_action.get)(greedy_actionids))
-        else:
-            random_action_weights = np.random.rand(arry.shape[0], arry.shape[1])
-            random_action_weights[possible_actions != 1] = -np.inf
-            random_actionids = np.argmax(random_action_weights, axis=1)
-            random_eps_weights = np.random.rand(random_actionids.shape[0])
-            result_actionids = greedy_actionids
-            result_actionids[random_eps_weights <= self.eps] = random_actionids[random_eps_weights <= self.eps]
-            actions = list(np.vectorize(self.id_action.get)(greedy_actionids))
-        return greedy_actionids, actions
+            return greedy_actionids, actions
+        random_action_weights = np.random.rand(arry.shape[0], arry.shape[1])
+        random_action_weights[possible_actions != 1] = -np.inf
+        random_actionids = np.argmax(random_action_weights, axis=1)
+        random_eps_weights = np.random.rand(random_actionids.shape[0])
+        result_actionids = greedy_actionids
+        result_actionids[random_eps_weights <= self.eps] = random_actionids[random_eps_weights <= self.eps]
+        actions = list(np.vectorize(self.id_action.get)(result_actionids))
+        return result_actionids, actions
 
     def qvalues(self, encoding):
         """

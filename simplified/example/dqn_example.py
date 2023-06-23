@@ -26,7 +26,7 @@ for _ in range(max_turn // 2):
         break
     gameids1, encoding1, possible_actions1 = dqn_encoder.encode(games, 1)
     with torch.no_grad():
-        actions1 = agent.choose_actions(encoding1, possible_actions1)
+        actionids1, actions1 = agent.choose_actions(encoding1, possible_actions1)
     gameid1_action = dict(zip(gameids1, actions1))
     for gameid in range(len(games)):
         if gameid in finished_games:
@@ -41,7 +41,7 @@ for _ in range(max_turn // 2):
         break
     gameids2, encoding2, possible_actions2 = dqn_encoder.encode(games, 2)
     with torch.no_grad():
-        actions2 = agent.choose_actions(encoding2, possible_actions2)
+        actionids2, actions2 = agent.choose_actions(encoding2, possible_actions2)
     gameid2_action = dict(zip(gameids2, actions2))
     for gameid in range(len(games)):
         if gameid in finished_games:
