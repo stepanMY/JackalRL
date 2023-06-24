@@ -24,7 +24,7 @@ class NeptuneLogger:
         Log single value
 
         @param name: string, name of metric
-        @param val: ambigious, value of metric
+        @param val: ambiguous, value of metric
         """
         self.run[name] = val
 
@@ -33,7 +33,7 @@ class NeptuneLogger:
         Log multiple values (with certain step)
 
         @param name: string, name of metric
-        @param val: ambigious, value of metric
+        @param val: ambiguous, value of metric
         @param step: float, step of logging
         """
         self.run[name].append(value=val, step=step)

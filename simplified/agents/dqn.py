@@ -272,6 +272,7 @@ class DqnTrainer:
                  fit_procedure_params,
                  logger,
                  baseline_agent,
+                 eps_params,
                  max_grad_norm=50,
                  device='cpu'):
         """
@@ -287,6 +288,8 @@ class DqnTrainer:
                                                                   'targetupdate_after'
         :param logger: NeptuneLogger, initialised logger
         :param baseline_agent: RandomAgent/GreedyAgent/SemiGreedyAgent, initialised agent to be used in evaluation games
+        :param eps_params: dict, dictionary with keys - 'eps_init', 'eps_final', 'eps_delta', 'eps_after'.
+                                 overwrites default eps
         :param max_grad_norm: int, maximum allowed gradient norm
         :param device: string, device to be used for inference and training 'cpu'/'gpu'
         """
@@ -303,6 +306,8 @@ class DqnTrainer:
         self.targetupdate_after = fit_procedure_params['targetupdate_after']
         self.logger = logger
         self.baseline_agent = baseline_agent
+        self.eps, self.eps_final, self.eps_delta, self.eps_after = eps_params['eps_init'], eps_params['eps_final'], \
+            eps_params['eps_delta'], eps_params['eps_after']
         self.max_grad_norm = max_grad_norm
         self.device = device
 
@@ -310,6 +315,8 @@ class DqnTrainer:
         self.train_counter = self.train_after
         self.eval_counter = self.eval_after
         self.target_counter = self.targetupdate_after
+        self.eps_counter = self.eps_after
+        self.dqn_agent.eps = self.eps
 
     def selfplay_and_log(self, games):
         """
@@ -392,6 +399,7 @@ class DqnTrainer:
         self.logger.log_stepmetric('first_wins', results_counter.get('first', 0)/len(games), self.games_counter)
         self.logger.log_stepmetric('second_wins', results_counter.get('second', 0)/len(games), self.games_counter)
         self.logger.log_stepmetric('draws', results_counter.get('draw', 0)/len(games), self.games_counter)
+        self.logger.log_stepmetric('eps_current', self.dqn_agent.eps, self.games_counter)
 
     def train(self):
         """
@@ -533,3 +541,7 @@ class DqnTrainer:
                 self.dqn_agent.update_target()
                 self.target_counter += self.targetupdate_after
                 self.logger.log_stepmetric('target_update', 1, self.games_counter)
+            if self.games_counter >= self.eps_counter:
+                self.eps = max(self.eps_final, self.eps - self.eps_delta)
+                self.dqn_agent.eps = self.eps
+                self.eps_counter += self.eps_after
