@@ -1,17 +1,45 @@
-import numpy as np
-from copy import deepcopy
+import neptune
 
 
-def prepare_game_tuple(game):
+class NeptuneLogger:
     """
-    Prepares game state tuple: (masked_field, full_field, gold_field,
-                      positions, turn_count, gold_left,
-                      (first_gold, game.second_gold))
-
-    :param game: object of SimpleGame, example of the game that will be used to calculate constants
-    :return:
+    Class that uses neptune library to log model behaviour
     """
-    progress_tuple = (np.copy(game.masked_field), np.copy(game.full_field), np.copy(game.gold_field),
-                      deepcopy(game.positions), game.turn_count, game.gold_left,
-                      (game.first_gold, game.second_gold))
-    return progress_tuple
+
+    def __init__(self, neptune_params):
+        """
+        @param neptune_params: dict, neptune parameters to be used to initialize the run
+        """
+        self.neptune_params = neptune_params
+        self.run = None
+
+    def start(self):
+        """
+        Initialize the run
+        """
+        self.run = neptune.init_run(**self.neptune_params)
+
+    def log_metric(self, name, val):
+        """
+        Log single value
+
+        @param name: string, name of metric
+        @param val: ambigious, value of metric
+        """
+        self.run[name] = val
+
+    def log_stepmetric(self, name, val, step):
+        """
+        Log multiple values (with certain step)
+
+        @param name: string, name of metric
+        @param val: ambigious, value of metric
+        @param step: float, step of logging
+        """
+        self.run[name].append(value=val, step=step)
+
+    def end(self):
+        """
+        Terminate the run
+        """
+        self.run.stop()

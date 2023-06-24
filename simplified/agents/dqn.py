@@ -1,6 +1,10 @@
 import numpy as np
 import torch
+import torch.nn as nn
+import math
+from collections import Counter
 from ..util.nn import ResUnet
+from ..game import SimpleGame
 
 
 class EncoderError(Exception):
@@ -181,7 +185,6 @@ class DqnAgent:
         :param eps: float, parameter of epsilon-greedy strategy
         """
         self.baseline_game = baseline_game
-        self.encoder = encoder
         self.device = device
         self.gamma = gamma
         self.eps = eps
@@ -251,3 +254,282 @@ class DqnAgent:
         :return: None
         """
         self.target_network.load_state_dict(self.network.state_dict())
+
+
+class DqnTrainer:
+    """
+    Class that encapsulates logic of DQN training: self-play, TD-loss calculation and evaluation against baseline bot
+    """
+    def __init__(self,
+                 dqn_agent,
+                 encoder,
+                 replay_buffer,
+                 mapgen,
+                 training_params,
+                 criterion,
+                 optimizer,
+                 optimizer_params,
+                 fit_procedure_params,
+                 logger,
+                 baseline_agent,
+                 max_grad_norm=50,
+                 device='cpu'):
+        """
+        :param dqn_agent: DqnAgent, initialised dqn agent
+        :param encoder: DqnEncoder, initialised dqn encoder
+        :param replay_buffer: ReplayBuffer, initialised replay buffer
+        :param mapgen: MapGenerator, initialised map generator
+        :param training_params: dictionary, dictionary with keys - 'train_steps', 'train_samplesize'
+        :param criterion: torch.loss, loss function to calculate and use in backwards
+        :param optimizer, torch.optimizer, optimizer to use in gradient descent
+        :param optimizer_params: dict, hyperparameters of optimizer
+        :param fit_procedure_params: dict, dictionary with keys - 'max_games', 'train_after', 'eval_after',
+                                                                  'targetupdate_after'
+        :param logger: NeptuneLogger, initialised logger
+        :param baseline_agent: RandomAgent/GreedyAgent/SemiGreedyAgent, initialised agent to be used in evaluation games
+        :param max_grad_norm: int, maximum allowed gradient norm
+        :param device: string, device to be used for inference and training 'cpu'/'gpu'
+        """
+        self.dqn_agent = dqn_agent
+        self.encoder = encoder
+        self.replay_buffer = replay_buffer
+        self.mapgen = mapgen
+        self.train_steps, self.train_samplesize = training_params['train_steps'], training_params['train_samplesize']
+        self.criterion = criterion
+        self.optimizer = optimizer(self.dqn_agent.network.parameters(), **optimizer_params)
+        self.max_games = fit_procedure_params['max_games']
+        self.train_after = fit_procedure_params['train_after']
+        self.eval_after = fit_procedure_params['eval_after']
+        self.targetupdate_after = fit_procedure_params['targetupdate_after']
+        self.logger = logger
+        self.baseline_agent = baseline_agent
+        self.max_grad_norm = max_grad_norm
+        self.device = device
+
+        self.games_counter = 0
+        self.train_counter = self.train_after
+        self.eval_counter = self.eval_after
+        self.target_counter = self.targetupdate_after
+
+    def selfplay_and_log(self, games):
+        """
+        Engage in dqn self-play and log every game
+
+        :param games: list(SimpleGame), list of games to play
+        :return: None
+        """
+        finished_games = set()
+        first_transition, second_transition = None, None
+        for j in range(games[0].max_turn // 2 + 1):
+            gameids1, encoding1, possible_actions1 = self.encoder.encode(games, 1)
+            if first_transition is None:
+                first_transition = []
+            else:
+                first_transition.append(tuple([reward2_ids.copy(), -1 * np.array(reward2)]))
+                first_transition.append(tuple([gameids1.copy(), encoding1.copy(), possible_actions1.copy()]))
+                self.replay_buffer.add(tuple(first_transition))
+                first_transition = []
+            first_transition.append(tuple([gameids1.copy(), encoding1.copy(), possible_actions1.copy()]))
+            with torch.no_grad():
+                if j == 0:
+                    qvalues = self.dqn_agent.qvalues(encoding1).detach().cpu().numpy()
+                    arry = np.array(qvalues)
+                    arry[possible_actions1 != 1] = -np.inf
+                    self.logger.log_stepmetric('initial_state_V', np.mean(np.max(arry, axis=1)), self.games_counter)
+                actionids1, actions1 = self.dqn_agent.choose_actions(encoding1, possible_actions1)
+            first_transition.append(actionids1.copy())
+            gameid1_action = dict(zip(gameids1, actions1))
+            reward1_ids, reward1 = [], []
+            for gameid in range(len(games)):
+                if gameid in finished_games:
+                    continue
+                game = games[gameid]
+                action1 = gameid1_action[gameid]
+                game.process_turn(1, action1)
+                reward1_ids.append(gameid)
+                reward1.append(game.last_reward)
+                if game.finished:
+                    finished_games.add(gameid)
+            first_transition.append(np.array(reward1))
+            if len(finished_games) == self.encoder.n_games:
+                break
+
+            gameids2, encoding2, possible_actions2 = self.encoder.encode(games, 2)
+            if second_transition is None:
+                second_transition = []
+            else:
+                second_transition.append(tuple([reward1_ids, -1 * np.array(reward1)]))
+                second_transition.append(tuple([gameids2.copy(), encoding2.copy(), possible_actions2.copy()]))
+                self.replay_buffer.add(tuple(second_transition))
+                second_transition = []
+            second_transition.append(tuple([gameids2.copy(), encoding2.copy(), possible_actions2.copy()]))
+            with torch.no_grad():
+                actionids2, actions2 = self.dqn_agent.choose_actions(encoding2, possible_actions2)
+            second_transition.append(actionids2.copy())
+            gameid2_action = dict(zip(gameids2, actions2))
+            reward2_ids, reward2 = [], []
+            for gameid in range(len(games)):
+                if gameid in finished_games:
+                    continue
+                game = games[gameid]
+                action2 = gameid2_action[gameid]
+                game.process_turn(2, action2)
+                reward2_ids.append(gameid)
+                reward2.append(game.last_reward)
+                if game.finished:
+                    finished_games.add(gameid)
+            second_transition.append(np.array(reward2))
+            if len(finished_games) == self.encoder.n_games:
+                break
+        self.games_counter += self.encoder.n_games
+        self.logger.log_stepmetric('first_gold', np.mean([game.first_gold for game in games]), self.games_counter)
+        self.logger.log_stepmetric('second_gold', np.mean([game.second_gold for game in games]), self.games_counter)
+        self.logger.log_stepmetric('turn_count', np.mean([game.turn_count for game in games]), self.games_counter)
+        self.logger.log_stepmetric('gold_left', np.mean([game.gold_left for game in games]), self.games_counter)
+        self.logger.log_stepmetric('buffer_size', len(self.replay_buffer), self.games_counter)
+        results = [game.result for game in games]
+        results_counter = Counter(results)
+        self.logger.log_stepmetric('first_wins', results_counter.get('first', 0)/len(games), self.games_counter)
+        self.logger.log_stepmetric('second_wins', results_counter.get('second', 0)/len(games), self.games_counter)
+        self.logger.log_stepmetric('draws', results_counter.get('draw', 0)/len(games), self.games_counter)
+
+    def train(self):
+        """
+        Loss calculation and network fit
+
+        :return: None
+        """
+        losses, grad_norms = [], []
+        for _ in range(self.train_steps):
+            sample = self.replay_buffer.sample(self.train_samplesize)
+            target, prediction = None, None
+            for indx in range(len(sample)):
+                current = sample[indx][0]
+                actions = sample[indx][1]
+                reward_before = sample[indx][2]
+                reward_after_ids, reward_after = sample[indx][3]
+                next_ = sample[indx][4]
+
+                qvals = self.dqn_agent.qvalues(current[1])
+                mask = torch.from_numpy(actions).to(self.device)[:, None]
+                qvals = qvals.gather(1, mask)[:, 0]
+                with torch.no_grad():
+                    qvals_target = self.dqn_agent.target_qvalues(next_[1])
+                    mask = torch.from_numpy(next_[2]).to(self.device)
+                    qvals_target[mask != 1] = -math.inf
+                    qvals_next, _ = torch.max(qvals_target, dim=1)
+                if current[1].shape[0] == next_[1].shape[0]:
+                    reward = torch.from_numpy(reward_before + reward_after).to(self.device)
+                    y = reward + self.dqn_agent.gamma * qvals_next
+                else:
+                    next_rewardids, next_gameids = set(reward_after_ids), set(next_[0])
+                    good_reward_indxs, good_game_indxs = [], []
+                    for i in range(len(current[0])):
+                        if current[0][i] in next_rewardids:
+                            good_reward_indxs.append(i)
+                        if current[0][i] in next_gameids:
+                            good_game_indxs.append(i)
+                    reward_after_ = np.zeros(reward_before.shape[0])
+                    reward_after_[good_reward_indxs] = reward_after
+                    reward = torch.from_numpy(reward_before + reward_after_).to(self.device)
+                    qvals_next_ = torch.zeros(qvals.shape[0]).to(self.device)
+                    qvals_next_[good_game_indxs] = qvals_next
+                    y = reward + self.dqn_agent.gamma * qvals_next_
+                if target is None:
+                    target = y
+                else:
+                    target = torch.cat([target, y])
+                if prediction is None:
+                    prediction = qvals
+                else:
+                    prediction = torch.cat([prediction, qvals])
+            loss = self.criterion(prediction.float(), target.float())
+            self.optimizer.zero_grad()
+            loss.backward()
+            grad_norm = nn.utils.clip_grad_norm_(self.dqn_agent.network.parameters(), self.max_grad_norm)
+            self.optimizer.step()
+            losses.append(loss.data.cpu().item())
+            grad_norms.append(grad_norm.cpu())
+        self.logger.log_stepmetric('loss', np.mean(losses), self.games_counter)
+        self.logger.log_stepmetric('grad_norm', np.mean(grad_norms), self.games_counter)
+
+    def eval(self, games):
+        """
+        Evaluate agent against baseline bot
+
+        :param games: list(SimpleGame), list of games to play
+        :return: None
+        """
+        finished_games = set()
+        for j in range(games[0].max_turn // 2 + 1):
+            gameids1, encoding1, possible_actions1 = self.encoder.encode(games, 1)
+            with torch.no_grad():
+                actionids1, actions1 = self.dqn_agent.choose_actions(encoding1, possible_actions1, greedy=True)
+            gameid1_action = dict(zip(gameids1, actions1))
+            for gameid in range(len(games)):
+                if gameid in finished_games:
+                    continue
+                game = games[gameid]
+                action1 = gameid1_action[gameid]
+                game.process_turn(1, action1)
+                if game.finished:
+                    finished_games.add(gameid)
+            if len(finished_games) == self.encoder.n_games:
+                break
+
+            self.encoder.update_previous_turns(games)
+            for gameid in range(len(games)):
+                if gameid in finished_games:
+                    continue
+                game = games[gameid]
+                action2 = self.baseline_agent.choose_action(game)
+                game.process_turn(2, action2)
+                if game.finished:
+                    finished_games.add(gameid)
+            if len(finished_games) == self.encoder.n_games:
+                break
+
+        self.logger.log_stepmetric('eval_first_gold', np.mean([game.first_gold for game in games]), self.games_counter)
+        self.logger.log_stepmetric('eval_second_gold',
+                                   np.mean([game.second_gold for game in games]), self.games_counter)
+        self.logger.log_stepmetric('eval_turn_count', np.mean([game.turn_count for game in games]), self.games_counter)
+        self.logger.log_stepmetric('eval_gold_left', np.mean([game.gold_left for game in games]), self.games_counter)
+        results = [game.result for game in games]
+        results_counter = Counter(results)
+        self.logger.log_stepmetric('eval_first_wins', results_counter.get('first', 0)/len(games), self.games_counter)
+        self.logger.log_stepmetric('eval_second_wins', results_counter.get('second', 0)/len(games), self.games_counter)
+        self.logger.log_stepmetric('eval_draws', results_counter.get('draw', 0)/len(games), self.games_counter)
+
+    def prepare_games(self):
+        """
+        Prepare list of games
+
+        :return: list(SimpleGame), list of games to play
+        """
+        fields, masked_fields = self.mapgen.generate(self.encoder.n_games)
+        games = []
+        for i in range(self.encoder.n_games):
+            field, masked_field = fields[i], masked_fields[i]
+            games.append(SimpleGame(field, masked_field, self.mapgen.tile_ids, self.encoder.max_turn))
+        return games
+
+    def fit(self):
+        """
+        Self-play and train network
+
+        :return: None
+        """
+        while self.games_counter < self.max_games:
+            games = self.prepare_games()
+            self.selfplay_and_log(games)
+            if self.games_counter >= self.train_counter:
+                self.train()
+                self.train_counter += self.train_after
+            if self.games_counter >= self.eval_counter:
+                games = self.prepare_games()
+                self.eval(games)
+                self.eval_counter += self.eval_after
+            if self.games_counter >= self.target_counter:
+                self.dqn_agent.update_target()
+                self.target_counter += self.targetupdate_after
+                self.logger.log_stepmetric('target_update', 1, self.games_counter)
