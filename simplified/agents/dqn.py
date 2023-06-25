@@ -273,6 +273,8 @@ class DqnTrainer:
                  logger,
                  baseline_agent,
                  eps_params,
+                 greedy_agent,
+                 mode='selfplay',
                  max_grad_norm=50,
                  device='cpu'):
         """
@@ -290,6 +292,8 @@ class DqnTrainer:
         :param baseline_agent: RandomAgent/GreedyAgent/SemiGreedyAgent, initialised agent to be used in evaluation games
         :param eps_params: dict, dictionary with keys - 'eps_init', 'eps_final', 'eps_delta', 'eps_after'.
                                  overwrites default eps
+        :param greedy_agent: GreedyAgent, will be used only if mode == 'greedyplay'
+        :param mode: string, 'selfplay'/'greedyplay', way of learning
         :param max_grad_norm: int, maximum allowed gradient norm
         :param device: string, device to be used for inference and training 'cpu'/'gpu'
         """
@@ -308,6 +312,8 @@ class DqnTrainer:
         self.baseline_agent = baseline_agent
         self.eps, self.eps_final, self.eps_delta, self.eps_after = eps_params['eps_init'], eps_params['eps_final'], \
             eps_params['eps_delta'], eps_params['eps_after']
+        self.greedy_agent = greedy_agent
+        self.mode = mode
         self.max_grad_norm = max_grad_norm
         self.device = device
 
@@ -385,6 +391,88 @@ class DqnTrainer:
                 reward2.append(game.last_reward)
                 if game.finished:
                     finished_games.add(gameid)
+            second_transition.append(np.array(reward2))
+            if len(finished_games) == self.encoder.n_games:
+                break
+        self.games_counter += self.encoder.n_games
+        self.logger.log_stepmetric('first_gold', np.mean([game.first_gold for game in games]), self.games_counter)
+        self.logger.log_stepmetric('second_gold', np.mean([game.second_gold for game in games]), self.games_counter)
+        self.logger.log_stepmetric('turn_count', np.mean([game.turn_count for game in games]), self.games_counter)
+        self.logger.log_stepmetric('gold_left', np.mean([game.gold_left for game in games]), self.games_counter)
+        self.logger.log_stepmetric('buffer_size', len(self.replay_buffer), self.games_counter)
+        results = [game.result for game in games]
+        results_counter = Counter(results)
+        self.logger.log_stepmetric('first_wins', results_counter.get('first', 0)/len(games), self.games_counter)
+        self.logger.log_stepmetric('second_wins', results_counter.get('second', 0)/len(games), self.games_counter)
+        self.logger.log_stepmetric('draws', results_counter.get('draw', 0)/len(games), self.games_counter)
+        self.logger.log_stepmetric('eps_current', self.dqn_agent.eps, self.games_counter)
+
+    def greedyplay_and_log(self, games):
+        """
+        Engage in dqn play with greedy agent and log every game
+
+        :param games: list(SimpleGame), list of games to play
+        :return: None
+        """
+        finished_games = set()
+        first_transition, second_transition = None, None
+        for j in range(games[0].max_turn // 2 + 1):
+            gameids1, encoding1, possible_actions1 = self.encoder.encode(games, 1)
+            if first_transition is None:
+                first_transition = []
+            else:
+                first_transition.append(tuple([reward2_ids.copy(), -1 * np.array(reward2)]))
+                first_transition.append(tuple([gameids1.copy(), encoding1.copy(), possible_actions1.copy()]))
+                self.replay_buffer.add(tuple(first_transition))
+                first_transition = []
+            first_transition.append(tuple([gameids1.copy(), encoding1.copy(), possible_actions1.copy()]))
+            with torch.no_grad():
+                if j == 0:
+                    qvalues = self.dqn_agent.qvalues(encoding1).detach().cpu().numpy()
+                    arry = np.array(qvalues)
+                    arry[possible_actions1 != 1] = -np.inf
+                    self.logger.log_stepmetric('initial_state_V', np.mean(np.max(arry, axis=1)), self.games_counter)
+                actionids1, actions1 = self.dqn_agent.choose_actions(encoding1, possible_actions1)
+            first_transition.append(actionids1.copy())
+            gameid1_action = dict(zip(gameids1, actions1))
+            reward1_ids, reward1 = [], []
+            for gameid in range(len(games)):
+                if gameid in finished_games:
+                    continue
+                game = games[gameid]
+                action1 = gameid1_action[gameid]
+                game.process_turn(1, action1)
+                reward1_ids.append(gameid)
+                reward1.append(game.last_reward)
+                if game.finished:
+                    finished_games.add(gameid)
+            first_transition.append(np.array(reward1))
+            if len(finished_games) == self.encoder.n_games:
+                break
+
+            gameids2, encoding2, possible_actions2 = self.encoder.encode(games, 2)
+            if second_transition is None:
+                second_transition = []
+            else:
+                second_transition.append(tuple([reward1_ids, -1 * np.array(reward1)]))
+                second_transition.append(tuple([gameids2.copy(), encoding2.copy(), possible_actions2.copy()]))
+                self.replay_buffer.add(tuple(second_transition))
+                second_transition = []
+            second_transition.append(tuple([gameids2.copy(), encoding2.copy(), possible_actions2.copy()]))
+            actionids2 = []
+            reward2_ids, reward2 = [], []
+            for gameid in range(len(games)):
+                if gameid in finished_games:
+                    continue
+                game = games[gameid]
+                action2 = self.greedy_agent.choose_action(game)
+                actionids2.append(self.encoder.action_id[action2])
+                game.process_turn(2, action2)
+                reward2_ids.append(gameid)
+                reward2.append(game.last_reward)
+                if game.finished:
+                    finished_games.add(gameid)
+            second_transition.append(np.array(actionids2))
             second_transition.append(np.array(reward2))
             if len(finished_games) == self.encoder.n_games:
                 break
@@ -529,7 +617,10 @@ class DqnTrainer:
         """
         while self.games_counter < self.max_games:
             games = self.prepare_games()
-            self.selfplay_and_log(games)
+            if self.mode == 'selfplay':
+                self.selfplay_and_log(games)
+            elif self.mode == 'greedyplay':
+                self.greedyplay_and_log(games)
             if self.games_counter >= self.train_counter:
                 self.train()
                 self.train_counter += self.train_after
