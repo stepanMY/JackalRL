@@ -1,4 +1,4 @@
 # JackalRL
-The RL project about Jackal board game.
+RL проект про настольную игру Шакал.
 
-Proceed to [/simplifed directory](simplified/) where all of the current progress is presented.
+Весь текущий прогресс представлен в [директории /simplifed](simplified/).
